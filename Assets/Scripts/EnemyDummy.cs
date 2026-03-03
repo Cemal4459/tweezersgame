@@ -9,7 +9,7 @@ public class EnemyDummy : MonoBehaviour
     [Header("Knockback (fixed step)")]
     public float knockbackStep = 0.6f;      // 1 adım mesafe
     public float knockbackTime = 0.08f;     // ne kadar sürede geri gitsin
-    public LayerMask obstacleMask;          // duvar/engel (Ground layer'ını buraya ver)
+    public LayerMask obstacleMask;          // duvar/engel (Ground layer'ını ver)
     public float obstacleCheckDistance = 0.65f;
 
     [Header("Options")]
@@ -27,14 +27,20 @@ public class EnemyDummy : MonoBehaviour
 
     public void TakeHit(int damage, Vector2 knockback, Vector2 hitPoint)
     {
+        Debug.Log("EnemyDummy TakeHit called!");
         hp -= damage;
 
-        // Kayma birikmesin
+        // Kayma birikmesin (Unity 6 uyumu)
+        rb.linearVelocity = Vector2.zero;
         rb.linearVelocity = Vector2.zero;
 
-        // Knockback yönü (sadece X)
-        float dir = Mathf.Sign((transform.position.x - hitPoint.x));
-        if (knockback.x != 0f) dir = Mathf.Sign(knockback.x);
+        // AI'yi kısa süre durdur
+        var ai = GetComponent<EnemyAI>();
+        if (ai != null) ai.Stun(knockbackTime);
+
+        // HER ZAMAN saldırandan UZAKLAŞ (hitPoint = saldırı kaynağı)
+        float dir = Mathf.Sign(transform.position.x - hitPoint.x);
+        if (dir == 0f) dir = 1f; // aynı x'e denk gelirse sağa it
 
         if (kbRoutine != null) StopCoroutine(kbRoutine);
         kbRoutine = StartCoroutine(KnockbackStep(dir));
@@ -45,29 +51,21 @@ public class EnemyDummy : MonoBehaviour
 
     private System.Collections.IEnumerator KnockbackStep(float dir)
     {
-        // Duvar kontrolü (hedefe giderken duvara çarpmayalım)
         Vector2 start = rb.position;
 
         float step = knockbackStep;
         Vector2 checkDir = new Vector2(dir, 0f);
 
-        // Eğer hemen arkamızda duvar varsa adımı küçült (hatta 0 yap)
+        // Duvar/engel varsa adımı küçült
         RaycastHit2D hit = Physics2D.Raycast(start, checkDir, obstacleCheckDistance, obstacleMask);
         if (hit.collider != null)
-        {
-            // Duvara kadar olan mesafeden biraz kısa git
             step = Mathf.Max(0f, hit.distance - 0.05f);
-        }
 
         Vector2 target = start + new Vector2(dir * step, 0f);
 
-        // İstersen knockback sırasında diğer kuvvetlerden etkilenmesin:
         RigidbodyConstraints2D prevConstraints = rb.constraints;
         if (lockMovementDuringKnockback)
-        {
-            // X serbest kalsın, sadece rotasyonu kilitle
             rb.constraints = RigidbodyConstraints2D.FreezeRotation;
-        }
 
         float t = 0f;
         while (t < knockbackTime)
@@ -79,6 +77,7 @@ public class EnemyDummy : MonoBehaviour
             yield return new WaitForFixedUpdate();
         }
 
+        rb.linearVelocity = Vector2.zero;
         rb.linearVelocity = Vector2.zero;
 
         if (lockMovementDuringKnockback)

@@ -15,21 +15,60 @@ public class PlayerMove2D : MonoBehaviour
     public LayerMask groundMask;
 
     private Rigidbody2D rb;
+    private Animator anim;
+
     private float inputX;
     private bool jumpPressed;
+    [SerializeField] private Transform visual;
+    [SerializeField] private Transform hitboxTransform;
 
     void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
+        anim = GetComponentInChildren<Animator>(); // Visual'in altındaki Animator'ı bulur
+        if (visual == null) visual = transform.Find("Visual");
+if (hitboxTransform == null) hitboxTransform = transform.Find("HitBox"); // dikkat: HitBox olabilir
+if (hitboxTransform == null) hitboxTransform = transform.Find("Hitbox"); // olmazsa bunu dener
     }
 
     void Update()
-    {
-        inputX = Input.GetAxisRaw("Horizontal");
+{
+    // 1) Input oku
+    inputX = Input.GetAxisRaw("Horizontal");
 
-        if (Input.GetButtonDown("Jump"))
-            jumpPressed = true;
+    // 2) Animator parametreleri (stabil)
+    if (anim != null)
+    {
+        anim.SetFloat("Speed", Mathf.Abs(inputX));
+        // Ground kontrolünü FixedUpdate'te yapıyorsan orada SetBool("IsGrounded", ...) kalsın
     }
+
+    // 3) Jump input
+    if (Input.GetButtonDown("Jump"))
+        jumpPressed = true;
+
+    // 4) (Opsiyonel) Yöne göre Visual + Hitbox çevirme
+   if (inputX != 0)
+{
+    float dir = Mathf.Sign(inputX);
+
+    // Visual flip
+    if (visual != null)
+    {
+        Vector3 s = visual.localScale;
+        s.x = Mathf.Abs(s.x) * dir;
+        visual.localScale = s;
+    }
+
+    // Hitbox'u tarafa geçir
+    if (hitboxTransform != null)
+    {
+        Vector3 p = hitboxTransform.localPosition;
+        p.x = Mathf.Abs(p.x) * dir;
+        hitboxTransform.localPosition = p;
+    }
+}
+}
 
     void FixedUpdate()
     {
@@ -37,6 +76,10 @@ public class PlayerMove2D : MonoBehaviour
         bool isGrounded = false;
         if (groundCheck != null)
             isGrounded = Physics2D.OverlapCircle(groundCheck.position, groundCheckRadius, groundMask);
+
+        // İstersen anim'e grounded da gönder
+        if (anim != null)
+            anim.SetBool("IsGrounded", isGrounded);
 
         // Horizontal movement with accel/decel
         float targetSpeed = inputX * moveSpeed;
