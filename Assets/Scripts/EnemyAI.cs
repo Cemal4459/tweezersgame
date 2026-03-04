@@ -18,22 +18,27 @@ public class EnemyAI : MonoBehaviour
     public int contactDamage = 10;
     public float attackHitboxTime = 0.12f;
 
-    [Header("Hitbox (optional)")]
-    public Collider2D attackHitbox;
+    [Header("Hitbox")]
+    public Collider2D attackHitbox;          // EnemyHitbox (child trigger)
+    public LayerMask playerMask;             // Player layer'ını seç
+    public bool oneHitPerAttack = true;      // 1 saldırıda 1 kez vursun
 
     [Header("Animator Params (optional)")]
-    public string speedParam = "";
-    public string attackTrigger = "";
+    public string speedParam = "";           // örn: "Speed" (yoksa boş)
+    public string attackTrigger = "Attack";  // sende var: Attack (yoksa boş bırak)
 
     [Header("Facing (only visual)")]
-    public bool invertFacing = true; // sende büyük ihtimal TRUE olacak
+    public bool invertFacing = true;
 
-    private Rigidbody2D rb;
-    private float lastAttackTime;
-    private float stunUntil = 0f;
+    Rigidbody2D rb;
+    float lastAttackTime;
+    float stunUntil = 0f;
 
-    private int moveDir = 1;          // hareket yönü (ASLA invert ile değişmez)
-    private float baseScaleX = 1f;
+    int moveDir = 1;          
+    float baseScaleX = 1f;
+
+    bool hitboxActive = false;
+    bool didDamageThisAttack = false;
 
     public void Stun(float seconds)
     {
@@ -49,6 +54,14 @@ public class EnemyAI : MonoBehaviour
 
         if (attackHitbox != null)
             attackHitbox.enabled = false;
+
+        // playerMask boşsa, default olarak "Player" layer'ını dene
+        if (playerMask.value == 0)
+        {
+            int playerLayer = LayerMask.NameToLayer("Player");
+            if (playerLayer != -1)
+                playerMask = 1 << playerLayer;
+        }
     }
 
     void Start()
@@ -79,16 +92,16 @@ public class EnemyAI : MonoBehaviour
             return;
         }
 
-        // Hareket yönü: player sağdaysa +1, soldaysa -1
         if (dx != 0) moveDir = (int)Mathf.Sign(dx);
 
-        // Görseli her frame hedefe döndür
+        // Görseli hedefe döndür
         SetVisualFacing(moveDir);
 
         // Attack
         if (dist <= attackRange)
         {
             StopMove();
+
             if (Time.time - lastAttackTime >= attackCooldown)
             {
                 lastAttackTime = Time.time;
@@ -112,7 +125,7 @@ public class EnemyAI : MonoBehaviour
 
     void DoAttack()
     {
-        // Attack başında da hedefe bak
+        // Attack başında hedefe bak
         if (target != null)
         {
             float dx = target.position.x - transform.position.x;
@@ -120,32 +133,64 @@ public class EnemyAI : MonoBehaviour
             SetVisualFacing(moveDir);
         }
 
+        didDamageThisAttack = false;
+
         if (anim != null && !string.IsNullOrEmpty(attackTrigger))
             anim.SetTrigger(attackTrigger);
 
         if (attackHitbox != null)
         {
+            hitboxActive = true;
             attackHitbox.enabled = true;
+
             CancelInvoke(nameof(DisableEnemyHitbox));
             Invoke(nameof(DisableEnemyHitbox), attackHitboxTime);
         }
         else
         {
+            // Hitbox yoksa en basit: menzildeyse direkt vur
             TryDamagePlayer();
         }
     }
 
     void DisableEnemyHitbox()
     {
+        hitboxActive = false;
+
         if (attackHitbox != null)
             attackHitbox.enabled = false;
+    }
+
+    // Hitbox temas edince hasar
+    void OnTriggerEnter2D(Collider2D other)
+    {
+        if (!hitboxActive) return;
+        if (attackHitbox == null) return;
+
+        // Bu script root'ta, hitbox child'da olabilir.
+        // Bu yüzden sadece hitbox açıkken "player" maskine giren bir şey temas ederse vur.
+        if (((1 << other.gameObject.layer) & playerMask) == 0) return;
+
+        if (oneHitPerAttack && didDamageThisAttack) return;
+
+        var hp = other.GetComponentInParent<PlayerHealth>();
+        if (hp != null)
+        {
+            hp.TakeDamage(contactDamage);
+            didDamageThisAttack = true;
+
+            if (oneHitPerAttack)
+                DisableEnemyHitbox();
+        }
     }
 
     void TryDamagePlayer()
     {
         if (target == null) return;
+
         var hp = target.GetComponentInParent<PlayerHealth>();
-        if (hp != null) hp.TakeDamage(contactDamage);
+        if (hp != null)
+            hp.TakeDamage(contactDamage);
     }
 
     void StopMove()
@@ -157,7 +202,6 @@ public class EnemyAI : MonoBehaviour
 
     void SetVisualFacing(int dirTowardTarget)
     {
-        // invertFacing sadece görseli ters çevirir, hareketi etkilemez
         int visualDir = invertFacing ? -dirTowardTarget : dirTowardTarget;
 
         Vector3 s = transform.localScale;
